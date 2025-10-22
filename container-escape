@@ -1,0 +1,96 @@
+⁠ apiVersion: v1
+kind: Namespace
+metadata:
+  name: kubegoat-container-escape
+
+---
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: goatvault
+  namespace: kubegoat-container-escape
+type: Opaque
+data:
+  k8sgoatvaultkey: azhzLWdvYXQtY2QyZGEyNzIyNDU5MWRhMmI0OGVmODM4MjZhOGE2YzM=
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vulnerable-kubernetes-pod-deployment
+  namespace: kubegoat-container-escape
+spec:
+  selector:
+    matchLabels:
+      app: system-monitor
+  template:
+    metadata:
+      labels:
+        app: system-monitor
+    spec:
+      hostPID: true
+      hostIPC: true
+      #hostNetwork: true
+      volumes:
+      - name: host-filesystem
+        hostPath:
+          path: /
+      containers:
+      - name: system-monitor
+        image: madhuakula/k8s-goat-system-monitor
+        resources:
+          limits:
+            memory: "50Mi"
+            cpu: "20m"
+        securityContext:
+          allowPrivilegeEscalation: true
+          privileged: true
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: host-filesystem
+          mountPath: /host-system
+        env:
+          - name: K8S_GOAT_VAULT_KEY
+            valueFrom:
+              secretKeyRef:
+                name: goatvault
+                key: k8sgoatvaultkey
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vulnerable-kubernetes-pod-service
+  namespace: kubegoat-container-escape
+spec:
+  ports:
+  - protocol: TCP
+    port: 8080
+    targetPort: 8080
+  selector:
+    app: system-monitor
+
+---
+
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: vulnerable-kubernetes-pod-route
+  namespace: kubegoat-container-escape
+spec:
+  host: system-monitor-vulnerable-kubernetes-pod.apps.palo-dev.virtus.corp
+  path: /
+  to:
+    kind: Service
+    name: system-monitor-service
+    weight: 100
+  port:
+    targetPort: 8080
+status:
+  ingress:
+    - host: system-monitor-vulnerable-kubernetes-pod.apps.palo-dev.virtus.corp
+      routerName: default
+      conditions:
+        - type: Admitted
+          status: 'True' ⁠
